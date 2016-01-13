@@ -517,6 +517,50 @@ void LCD_layerStack_capability( uint8_t state, uint8_t stateType, uint8_t *args 
 	LCD_layerStackExact_capability( state, stateType, (uint8_t*)&stack_args );
 }
 
+uint8_t LCD_status = 1; // start in the ON state
+void LCD_status_capability( uint8_t state, uint8_t stateType, uint8_t *args ) {
+  uint8_t status = *args;
+  if(state == 0xFF && stateType == 0xFF) {
+    print("LCD_status_capability(status)");
+  }
+
+  // Only deal with the interconnect if it has been compiled in
+#if defined(ConnectEnabled_define)
+	if ( Connect_master )
+	{
+		// generatedKeymap.h
+		extern const Capability CapabilitiesList[];
+
+		// Broadcast layerStackExact remote capability (0xFF is the broadcast id)
+		Connect_send_RemoteCapability(
+			0xFF,
+			LCD_status_capability_index,
+			state,
+			stateType,
+			CapabilitiesList[ LCD_status_capability_index ].argCount,
+            &status);
+	}
+#endif
+
+  // stateType 0: normal
+  // state 1: press (e.g. onKeyDown)
+  if ( status == 0 ) {
+    FTM0_C0V = 0;
+    FTM0_C1V = 0;
+    FTM0_C2V = 0;
+    LCD_status = status;
+  } else if ( status == 1) {
+    LCD_layerStackExact_args stack_args;
+    stack_args.numArgs = LCD_layerStackExact_size;
+    memcpy(stack_args.layers, LCD_layerStackExact, sizeof(LCD_layerStackExact));
+    LCD_layerStackExact_capability( state, stateType, (uint8_t*)&stack_args );
+    LCD_status = status;
+  } else if ( status == 2 && stateType == 0x00 && state == 0x03 ) {
+    status = !LCD_status;
+    LCD_status_capability( state, stateType, &status );
+  }
+}
+
 
 
 // ----- CLI Command Functions -----
@@ -641,4 +685,3 @@ void cliFunc_lcdDisp( char* args )
 		SPI_write( &value, 1 );
 	}
 }
-
