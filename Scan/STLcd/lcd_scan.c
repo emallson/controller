@@ -524,24 +524,6 @@ void LCD_status_capability( uint8_t state, uint8_t stateType, uint8_t *args ) {
     print("LCD_status_capability(status)");
   }
 
-  // Only deal with the interconnect if it has been compiled in
-#if defined(ConnectEnabled_define)
-	if ( Connect_master )
-	{
-		// generatedKeymap.h
-		extern const Capability CapabilitiesList[];
-
-		// Broadcast layerStackExact remote capability (0xFF is the broadcast id)
-		Connect_send_RemoteCapability(
-			0xFF,
-			LCD_status_capability_index,
-			state,
-			stateType,
-			CapabilitiesList[ LCD_status_capability_index ].argCount,
-            &status);
-	}
-#endif
-
   // stateType 0: normal
   // state 1: press (e.g. onKeyDown)
   if ( status == 0 ) {
@@ -559,6 +541,28 @@ void LCD_status_capability( uint8_t state, uint8_t stateType, uint8_t *args ) {
     status = !LCD_status;
     LCD_status_capability( state, stateType, &status );
   }
+
+#if defined(ConnectEnabled_define)
+  // Only deal with the interconnect if it has been compiled in
+  // if we don't recurse
+  if ( status == 0 || status == 1 ) {
+
+    if ( Connect_master )
+      {
+        // generatedKeymap.h
+        extern const Capability CapabilitiesList[];
+
+        // Broadcast layerStackExact remote capability (0xFF is the broadcast id)
+        Connect_send_RemoteCapability(
+                                      0xFF,
+                                      LCD_status_capability_index,
+                                      state,
+                                      stateType,
+                                      CapabilitiesList[ LCD_status_capability_index ].argCount,
+                                      &status);
+      }
+  }
+#endif
 }
 
 
