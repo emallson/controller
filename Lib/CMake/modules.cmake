@@ -1,6 +1,6 @@
 ###| CMAKE Kiibohd Controller Source Configurator |###
 #
-# Written by Jacob Alexander in 2011-2015 for the Kiibohd Controller
+# Written by Jacob Alexander in 2011-2017 for the Kiibohd Controller
 #
 # Released into the Public Domain
 #
@@ -16,22 +16,22 @@ set ( CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/Lib/CMake/" )
 
 
 ###
-# Module Overrides (Used in the buildall.bash script)
+# Host Build Mode (Override ScanModule and OutputModules)
+# Or Normal Path Setup
 #
-if ( ( DEFINED ScanModuleOverride ) AND ( EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/Scan/${ScanModuleOverride} ) )
-	set( ScanModule ${ScanModuleOverride} )
+if ( HostBuild )
+	set(  ScanModulePath    "Scan/TestIn"          )
+	set( MacroModulePath   "Macro/${MacroModule}"  )
+	set( OutputModulePath "Output/TestOut"         )
+	set( DebugModulePath   "Debug/${DebugModule}"  )
+
+#| Normal Path Setup
+else ()
+	set(  ScanModulePath    "Scan/${ScanModule}"   )
+	set( MacroModulePath   "Macro/${MacroModule}"  )
+	set( OutputModulePath "Output/${OutputModule}" )
+	set( DebugModulePath   "Debug/${DebugModule}"  )
 endif ()
-
-
-
-
-###
-# Path Setup
-#
-set(  ScanModulePath    "Scan/${ScanModule}"   )
-set( MacroModulePath   "Macro/${MacroModule}"  )
-set( OutputModulePath "Output/${OutputModule}" )
-set( DebugModulePath   "Debug/${DebugModule}"  )
 
 #| Top-level directory adjustment
 set( HEAD_DIR "${CMAKE_CURRENT_SOURCE_DIR}" )
@@ -67,8 +67,20 @@ macro ( PathPrepend Output SourcesPath )
 
 	# Loop through items
 	foreach ( item ${ARGN} )
-		# Set the path
-		set ( tmpSource ${tmpSource} "${SourcesPath}/${item}" )
+		# If the leading character is a / treat as an absolute path
+		string ( SUBSTRING "${item}" 0 1 character )
+		string ( SUBSTRING "${item}" 1 2 windows_drv )
+		if ( character STREQUAL "/" )
+			set ( tmpSource ${tmpSource} "${item}" )
+
+		# Check if a Windows Drive path
+		elseif ( windows_drv STREQUAL ":/" )
+			set ( tmpSource ${tmpSource} "${item}" )
+
+		# Otherwise just set the path
+		else ()
+			set ( tmpSource ${tmpSource} "${SourcesPath}/${item}" )
+		endif ()
 	endforeach ()
 
 	# Finalize by writing the new list back over the old one
@@ -111,7 +123,10 @@ function ( AddModule ModuleType ModuleName )
 	add_definitions ( -I${ModuleFullPath} )
 
 	# Check module compatibility
-	ModuleCompatibility( ${ModulePath} ${ModuleCompatibility} )
+	# Ignore if overriding the compiler family
+	if ( NOT CompilerOverride )
+		ModuleCompatibility( ${ModulePath} ${ModuleCompatibility} )
+	endif ()
 
 	# Check if this is a main module add
 	foreach ( extraArg ${ARGN} )
@@ -137,106 +152,27 @@ endfunction ()
 
 
 #| Add main modules
-AddModule ( Scan   ${ScanModule}   1 )
-AddModule ( Macro  ${MacroModule}  1 )
-AddModule ( Output ${OutputModule} 1 )
-AddModule ( Debug  ${DebugModule}  1 )
-
-
-
-###
-# CMake Module Checking
-#
-find_package ( Git REQUIRED )
-find_package ( Ctags ) # Optional
-
-
-
-###
-# Generate USB Defines
-#
-
-#| Manufacturer name
-set ( MANUFACTURER "Kiibohd" )
-
-
-#| Serial Number
-#| Attempt to call Git to get the branch, last commit date, and whether code modified since last commit
-
-#| Modified
-#| Takes a bit of work to extract the "M " using CMake, and not using it if there are no modifications
-execute_process ( COMMAND ${GIT_EXECUTABLE} status -s -uno --porcelain
-	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-	OUTPUT_VARIABLE Git_Modified_INFO
-	ERROR_QUIET
-	OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-string ( LENGTH "${Git_Modified_INFO}" Git_Modified_LENGTH )
-set ( Git_Modified_Status "Clean" )
-if ( ${Git_Modified_LENGTH} GREATER 2 )
-	string ( SUBSTRING "${Git_Modified_INFO}" 1 2 Git_Modified_Flag_INFO )
-	set ( Git_Modified_Status "Dirty" )
+if ( HostBuild )
+	AddModule ( Scan   TestIn          1 )
+	AddModule ( Macro  ${MacroModule}  1 )
+	AddModule ( Output TestOut         1 )
+	AddModule ( Debug  ${DebugModule}  1 )
+else ()
+	AddModule ( Scan   ${ScanModule}   1 )
+	AddModule ( Macro  ${MacroModule}  1 )
+	AddModule ( Output ${OutputModule} 1 )
+	AddModule ( Debug  ${DebugModule}  1 )
 endif ()
 
-#| List of modified files
-execute_process ( COMMAND ${GIT_EXECUTABLE} diff-index --name-only HEAD --
-	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-	OUTPUT_VARIABLE Git_Modified_Files
-	ERROR_QUIET
-	OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-string ( REGEX REPLACE "\n" "\\\\r\\\\n\\\\t" Git_Modified_Files "${Git_Modified_Files}" )
-set ( Git_Modified_Files "\\r\\n\\t${Git_Modified_Files}" )
 
-#| Branch
-execute_process( COMMAND ${GIT_EXECUTABLE} rev-parse --abbrev-ref HEAD
-	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-	OUTPUT_VARIABLE Git_Branch_INFO
-	ERROR_QUIET
-	OUTPUT_STRIP_TRAILING_WHITESPACE
-)
 
-#| Date
-execute_process ( COMMAND ${GIT_EXECUTABLE} show -s --format=%ci
-	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-	OUTPUT_VARIABLE Git_Date_INFO
-	ERROR_QUIET
-	OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+###
+# CMake Build Env Checking
+#
 
-#| Commit Author and Email
-execute_process ( COMMAND ${GIT_EXECUTABLE} show -s --format="%cn <%ce>"
-	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-	OUTPUT_VARIABLE Git_Commit_Author
-	ERROR_QUIET
-	OUTPUT_STRIP_TRAILING_WHITESPACE
-)
+include( buildinfo )
 
-#| Commit Revision
-execute_process ( COMMAND ${GIT_EXECUTABLE} show -s --format=%H
-	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-	OUTPUT_VARIABLE Git_Commit_Revision
-	ERROR_QUIET
-	OUTPUT_STRIP_TRAILING_WHITESPACE
-)
 
-#| Origin URL
-execute_process ( COMMAND ${GIT_EXECUTABLE} config --get remote.origin.url
-	WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
-	OUTPUT_VARIABLE Git_Origin_URL
-	ERROR_QUIET
-	OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-
-#| Build Date
-execute_process ( COMMAND "date" "+%Y-%m-%d %T %z"
-	OUTPUT_VARIABLE Build_Date
-	ERROR_QUIET
-	OUTPUT_STRIP_TRAILING_WHITESPACE
-)
-
-#| Last Commit Date
-set ( GitLastCommitDate "${Git_Modified_Status} ${Git_Branch_INFO} - ${Git_Date_INFO}" )
 
 #| Uses CMake variables to include as defines
 #| Primarily for USB configuration
@@ -264,6 +200,8 @@ include_directories ( ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR} )
 ###
 # ctag Generation
 #
+
+find_package ( Ctags ) # Optional
 
 if ( CTAGS_EXECUTABLE )
 	# Populate list of directories for ctags to parse

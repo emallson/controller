@@ -1,4 +1,4 @@
-/* Copyright (C) 2014-2015 by Jacob Alexander
+/* Copyright (C) 2014-2016 by Jacob Alexander
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -42,7 +42,7 @@
 
 // AVR CLI Dictionary definitions (has to deal with the annoying PROGMEM
 // Only using PROGMEM with descriptions (all the string comparison tools need to be re-written otherwise)
-#if defined(_at90usb162_) || defined(_atmega32u4_) || defined(_at90usb646_) || defined(_at90usb1286_) // AVR
+#if defined(_avr_at) // AVR
 #define CLIDict_Def(name,description) \
 	const PROGMEM char name##Name[] = description; \
 	const CLIDictItem name[]
@@ -53,8 +53,8 @@
 #define CLIDict_Entry(name,description) \
 	const PROGMEM char name##CLIDict_DescEntry[] = description;
 
-// ARM is easy :P
-#elif defined(_mk20dx128_) || defined(_mk20dx128vlf5_) || defined(_mk20dx256_) || defined(_mk20dx256vlh7_) // ARM
+// ARM like nearly everything else is easy :P
+#else
 #define CLIDict_Def(name,description) \
 	const char name##Name[] = description; \
 	const CLIDictItem name[]
@@ -64,6 +64,7 @@
 
 #define CLIDict_Entry(name,description) \
 	const char name##CLIDict_DescEntry[] = description;
+
 #endif
 
 #define RING_PREV(i) CLI_wrap(i - 1, 0, CLIMaxHistorySize - 1)
@@ -106,7 +107,7 @@ uint8_t CLIHexDebugMode;
 // ----- Functions and Corresponding Function Aliases -----
 
 void CLI_init();
-void CLI_process();
+int CLI_process();
 void CLI_registerDictionary( const CLIDictItem *cmdDict, const char* dictName );
 void CLI_argumentIsolation( char* string, char** first, char** second );
 
@@ -117,15 +118,18 @@ void CLI_saveHistory( char *buff );
 void CLI_retreiveHistory( int index );
 
 // CLI Command Functions
-void cliFunc_arch    ( char* args );
-void cliFunc_chip    ( char* args );
-void cliFunc_clear   ( char* args );
-void cliFunc_cliDebug( char* args );
-void cliFunc_device  ( char* args );
-void cliFunc_help    ( char* args );
-void cliFunc_led     ( char* args );
-void cliFunc_reload  ( char* args );
-void cliFunc_reset   ( char* args );
-void cliFunc_restart ( char* args );
-void cliFunc_version ( char* args );
+void cliFunc_clear    ( char* args );
+void cliFunc_cliDebug ( char* args );
+void cliFunc_colorTest( char* args );
+void cliFunc_exit     ( char* args );
+void cliFunc_help     ( char* args );
+void cliFunc_latency  ( char* args );
+void cliFunc_led      ( char* args );
+void cliFunc_periodic ( char* args );
+void cliFunc_rand     ( char* args );
+void cliFunc_reload   ( char* args );
+void cliFunc_reset    ( char* args );
+void cliFunc_restart  ( char* args );
+void cliFunc_tick     ( char* args );
+void cliFunc_version  ( char* args );
 

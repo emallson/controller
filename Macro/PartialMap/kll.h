@@ -1,4 +1,4 @@
-/* Copyright (C) 2014-2015 by Jacob Alexander
+/* Copyright (C) 2014-2017 by Jacob Alexander
  *
  * This file is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,7 @@
 #include <kll_defs.h>
 
 // Project Includes
+#include <Lib/time.h>
 #include <print.h>
 #include <scan_loop.h>
 #include <macro.h>
@@ -49,19 +50,114 @@ typedef uint8_t  var_uint_t;
 #endif
 
 // - NOTE -
+// It is possible to change the maximum number of trigger/result index sizes
+// This will affect SRAM and flash usage, so it can be used to fit code on smaller uCs.
+// Also allows for over 4 billion triggers and results (triggers and results have separate indices)
+#if IndexWordSize_define == 32
+typedef uint32_t index_uint_t;
+#elif IndexWordSize_define == 16
+typedef uint16_t index_uint_t;
+#elif IndexWordSize_define == 8
+typedef uint8_t index_uint_t;
+#else
+#error "Invalid IndexWordSize, possible values: 32, 16 and 8."
+#endif
+
+// - NOTE -
 // Native pointer length
 // This needs to be defined per microcontroller
 // e.g. mk20s  -> 32 bit
 //      atmega -> 16 bit
-#if defined(_mk20dx128_) || defined(_mk20dx128vlf5_) || defined(_mk20dx256_) || defined(_mk20dx256vlh7_) // ARM
+// Default to whatever is detected
+#if defined(_kinetis_)
 typedef uint32_t nat_ptr_t;
-#elif defined(_at90usb162_) || defined(_atmega32u4_) || defined(_at90usb646_) || defined(_at90usb1286_) // AVR
+#elif defined(_avr_at_)
 typedef uint16_t nat_ptr_t;
+#else
+typedef uintptr_t nat_ptr_t;
+#endif
+
+// - NOTE -
+// ScheduleState index size
+// This will greatly increase the amount of flash required for the lookup tables.
+// If possible, should be set to 8bit.
+// XXX (HaaTa) Compute using KLL compiler
+#define ScheduleStateSize_define 8
+#if ScheduleStateSize_define == 32
+typedef uint32_t state_uint_t;
+#elif ScheduleStateSize_define == 16
+typedef uint16_t state_uint_t;
+#elif ScheduleStateSize_define == 8
+typedef uint8_t state_uint_t;
+#else
+#error "Invalid ScheduleStateSize, possible values: 32, 16, 8."
 #endif
 
 
 
 // ----- Structs -----
+
+// -- Scheduling
+// ScheduleStates are contained in a separate datastructure and retrieved by index.
+// In most cases a schedule is duplicated many times, and thus does not need to be repeated in memory.
+//
+// States:
+//   * Press/Hold/Release/Off - PHRO
+//   * Start/On/Stop/Off      - AODO
+//   * Done/Repeat/Off        - DRO
+//   * Threshold (Range)      - 0x01 (Released), 0x10 (Light press), 0xFF (Max press) (Threashold)
+//   * Debug                  - 0xFF (Print capability name)
+//
+// States with the same numerical value have same/similar function, but is called something else in that case.
+//
+typedef enum ScheduleState {
+	ScheduleType_P      = 0x01, // Press
+	ScheduleType_H      = 0x02, // Hold
+	ScheduleType_R      = 0x03, // Release
+	ScheduleType_O      = 0x00, // Off
+	ScheduleType_UP     = 0x04, // Unique Press
+	ScheduleType_UR     = 0x05, // Unique Release
+
+	ScheduleType_A      = 0x01, // Activate
+	ScheduleType_On     = 0x02, // On
+	ScheduleType_D      = 0x03, // Deactivate
+	ScheduleType_Off    = 0x00, // Off
+
+	ScheduleType_Done   = 0x06, // Done
+	ScheduleType_Repeat = 0x07, // Repeat
+
+	ScheduleType_Debug  = 0xFF, // Print capability name
+} ScheduleState;
+
+// Schedule parameter container
+// time   - Time constraints for parameter
+//          Set to 0.0 if unused
+// state  - Required state condition
+// analog - Analog threshold condition
+typedef struct ScheduleParam {
+	Time time; // ms systick + cycletick (e.g. 13.889 ns per tick for 72 MHz)
+	union {
+		ScheduleState state;
+		uint8_t analog;
+	};
+} ScheduleParam;
+
+// Main schedule container
+// params - Pointer to list of ScheduleParams
+// count  - Number of ScheduleParams
+typedef struct Schedule {
+	ScheduleParam *params;
+	uint8_t count;
+} Schedule;
+
+// TODO Add to KLL, compute based on number of schedules
+#define ScheduleNum_KLL 2
+typedef struct ScheduleLookup {
+	Schedule schedule[ ScheduleNum_KLL ];
+	state_uint_t count;
+} ScheduleLookup;
+
+
 
 // -- Result Macro
 // Defines the sequence of combinations to as the Result of Trigger Macro
@@ -100,19 +196,29 @@ typedef struct ResultGuide {
 // -- Trigger Macro
 // Defines the sequence of combinations to Trigger a Result Macro
 // For RAM optimization reasons TriggerMacro has been split into TriggerMacro and TriggerMacroRecord
-// Key Types:
-//   * 0x00 Normal (Press/Hold/Release)
-//   * 0x01 LED State (On/Off)
-//   * 0x02 Analog (Threshold)
-//   * 0x03-0xFE Reserved
+// Types:
+//   * 0x00 Switch Bank 1    (   0- 255) [PHRO]
+//   * 0x01 Switch Bank 2    ( 256- 511) [PHRO]
+//   * 0x02 Switch Bank 3    ( 512- 767) [PHRO]
+//   * 0x03 Switch Bank 4    ( 768-1023) [PHRO]
+//   * 0x04 LED    Bank 1    (   0- 255) [AODO]
+//   * 0x05 Analog Bank 1    (   0- 255) [Threshold]
+//   * 0x06 Analog Bank 2    ( 256- 511) [Threshold]
+//   * 0x07 Analog Bank 3    ( 512- 767) [Threshold]
+//   * 0x08 Analog Bank 4    ( 768-1023) [Threshold]
+//   * 0x09 Layer  Bank 1    (   0- 255) [AODO]
+//   * 0x0A Layer  Bank 2    ( 256- 511) [AODO]
+//   * 0x0B Layer  Bank 3    ( 512- 767) [AODO]
+//   * 0x0C Layer  Bank 4    ( 768-1023) [AODO]
+//   * 0x0D Animation Bank 1 (   0- 255) [DRO]
+//   * 0x0E Animation Bank 2 ( 256- 511) [DRO]
+//   * 0x0F Animation Bank 3 ( 512- 767) [DRO]
+//   * 0x10 Animation Bank 4 ( 768-1023) [DRO]
+//   * 0x11-0xFE Reserved
 //   * 0xFF Debug State
 //
-// Key State:
-//   * Off                - 0x00 (all flag states)
-//   * On                 - 0x01
-//   * Press/Hold/Release - 0x01/0x02/0x03
-//   * Threshold (Range)  - 0x01 (Released), 0x10 (Light press), 0xFF (Max press)
-//   * Debug              - 0xFF (Print capability name)
+// States:
+//   * See ScheduleState above.
 //
 // Combo Length of 0 signifies end of sequence
 //
@@ -121,6 +227,31 @@ typedef struct ResultGuide {
 //
 // TriggerMacroRecord.pos   -> <current combo position>
 // TriggerMacroRecord.state -> <status of the macro pos>
+
+// TriggerType
+typedef enum TriggerType {
+	TriggerType_Switch1    = 0x00,
+	TriggerType_Switch2    = 0x01,
+	TriggerType_Switch3    = 0x02,
+	TriggerType_Switch4    = 0x03,
+	TriggerType_LED1       = 0x04,
+	TriggerType_Analog1    = 0x05,
+	TriggerType_Analog2    = 0x06,
+	TriggerType_Analog3    = 0x07,
+	TriggerType_Analog4    = 0x08,
+	TriggerType_Layer1     = 0x09,
+	TriggerType_Layer2     = 0x0A,
+	TriggerType_Layer3     = 0x0B,
+	TriggerType_Layer4     = 0x0C,
+	TriggerType_Animation1 = 0x0D,
+	TriggerType_Animation2 = 0x0E,
+	TriggerType_Animation3 = 0x0F,
+	TriggerType_Animation4 = 0x10,
+
+	/* Reserved 0x11-0xFE */
+
+	TriggerType_Debug   = 0xFF,
+} TriggerType;
 
 // TriggerMacro states
 typedef enum TriggerMacroState {
@@ -141,6 +272,7 @@ typedef struct TriggerMacroRecord {
 } TriggerMacroRecord;
 
 // Guide, key element
+// Used for storing Trigger elements
 #define TriggerGuideSize sizeof( TriggerGuide )
 typedef struct TriggerGuide {
 	uint8_t type;
@@ -148,18 +280,49 @@ typedef struct TriggerGuide {
 	uint8_t scanCode;
 } TriggerGuide;
 
+// Used for incoming Trigger events
+typedef struct TriggerEvent {
+	TriggerType   type;
+	ScheduleState state;
+	uint8_t       index;
+} TriggerEvent;
+
+
+
+// -- List Structs
+
+// Result pending list struct
+typedef struct ResultPendingElem {
+	TriggerMacro *trigger;
+	index_uint_t  index;
+} ResultPendingElem;
+
+// Results Pending - Ring-buffer definition
+typedef struct ResultsPending {
+	ResultPendingElem data[ ResultMacroNum_KLL ];
+	index_uint_t      size;
+} ResultsPending;
+
 
 
 // ----- Capabilities -----
 
+// Capability Features
+typedef enum CapabilityFeature {
+	CapabilityFeature_None = 0x0, // Default
+	CapabilityFeature_Safe = 0x1, // Safe to call capability immediately (i.e. no queueing)
+} CapabilityFeature;
+
 // Capability
 typedef struct Capability {
-	const void *func;
-	const uint8_t argCount;
+	const void             *func;
+	const uint8_t           argCount;
+	const CapabilityFeature features;
 } Capability;
 
 // Total Number of Capabilities
-#define CapabilitiesNum sizeof( CapabilitiesList ) / sizeof( Capability )
+// (generated by KLL)
+#define CapabilitiesNum CapabilitiesNum_KLL
 
 
 // -- Result Macros
@@ -179,7 +342,8 @@ typedef struct Capability {
 
 // Total number of result macros (rm's)
 // Used to create pending rm's table
-#define ResultMacroNum sizeof( ResultMacroList ) / sizeof( ResultMacro )
+// (generated by KLL)
+#define ResultMacroNum ResultMacroNum_KLL
 
 
 // -- Trigger Macros
@@ -199,7 +363,8 @@ typedef struct Capability {
 
 // Total number of trigger macros (tm's)
 // Used to create pending tm's table
-#define TriggerMacroNum sizeof( TriggerMacroList ) / sizeof( TriggerMacro )
+// (generated by KLL)
+#define TriggerMacroNum TriggerMacroNum_KLL
 
 
 
@@ -235,6 +400,13 @@ typedef struct Capability {
 //
 // The name is defined for cli debugging purposes (Null terminated string)
 
+typedef enum LayerStateType {
+	LayerStateType_Off   = 0x00,
+	LayerStateType_Shift = 0x01,
+	LayerStateType_Latch = 0x02,
+	LayerStateType_Lock  = 0x04,
+} LayerStateType;
+
 typedef struct Layer {
 	const nat_ptr_t **triggerMap;
 	const char *name;
@@ -248,6 +420,23 @@ typedef struct Layer {
 //  * first - First scan code used (most keyboards start at 0, some start higher e.g. 0x40)
 #define Layer_IN( map, name, first ) { map, name, first, sizeof( map ) / sizeof( nat_ptr_t ) - 1 + first }
 
-// Total number of layers
-#define LayerNum sizeof( LayerIndex ) / sizeof( Layer )
+// Total number of layers (generated by KLL)
+#define LayerNum LayerNum_KLL
+
+
+
+// ----- Key Positions -----
+
+// Each positions has 6 dimensions
+// Units are in mm
+#define PositionEntry( x, y, z, rx, ry, rz ) \
+	{ x, y, z, rx, ry, rz }
+typedef struct Position {
+	float x;
+	float y;
+	float z;
+	float rx;
+	float ry;
+	float rz;
+} Position;
 

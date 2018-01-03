@@ -56,8 +56,25 @@ tags
 CMakeFiles
 CMakeCache.txt
 cmake_install.cmake
+compile_commands.json
 
 # External Repos #
 ##################
 kll
+
+# Build Directories #
+#####################
+*.gcc.make*
+*.gcc.ninja*
+*.clang.make*
+*.clang.ninja*
+
+# Python Generated #
+####################
+__pycache__
+
+# Misc #
+########
+builds
+Builds
 

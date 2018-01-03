@@ -1,4 +1,4 @@
-/* Copyright (C) 2014-2015 by Jacob Alexander
+/* Copyright (C) 2014-2017 by Jacob Alexander
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -32,6 +32,7 @@
 #include <matrix_scan.h>
 #include <macro.h>
 #include <output_com.h>
+#include <pixel.h>
 
 // Local Includes
 #include "scan_loop.h"
@@ -41,11 +42,6 @@
 // ----- Function Declarations -----
 
 // ----- Variables -----
-
-// Number of scans since the last USB send
-uint16_t Scan_scanCount = 0;
-
-
 
 // ----- Functions -----
 
@@ -58,21 +54,34 @@ inline void Scan_setup()
 	// Setup ISSI chip to control the leds
 	LED_setup();
 
-	// Reset scan count
-	Scan_scanCount = 0;
+	// Setup Pixel Map
+	Pixel_setup();
+
+	// Start Matrix Scanner
+	Matrix_start();
 }
 
 
-// Main Detection Loop
-inline uint8_t Scan_loop()
+// Main Poll Loop
+// This is for operations that need to be run as often as possible
+// Usually reserved for LED update routines and other things that need quick update rates
+void Scan_poll()
 {
-	// Scan Matrix
-	Matrix_scan( Scan_scanCount++ );
+	// Prepare any LED events
+	Pixel_process();
 
 	// Process any LED events
 	LED_scan();
+}
 
-	return 0;
+
+// Main Periodic Scan
+// This function is called periodically at a constant rate
+// Useful for matrix scanning and anything that requires consistent attention
+uint8_t Scan_periodic()
+{
+	// Scan Matrix
+	return Matrix_single_scan();
 }
 
 
@@ -85,8 +94,15 @@ inline void Scan_finishedWithMacro( uint8_t sentKeys )
 // Signal from Output Module that all keys have been processed (that it knows about)
 inline void Scan_finishedWithOutput( uint8_t sentKeys )
 {
-	// Reset scan loop indicator (resets each key debounce state)
-	// TODO should this occur after USB send or Macro processing?
-	Scan_scanCount = 0;
+}
+
+
+// Signal from the Output Module that the available current has changed
+// current - mA
+void Scan_currentChange( unsigned int current )
+{
+	// Indicate to all submodules current change
+	Matrix_currentChange( current );
+	LED_currentChange( current );
 }
 

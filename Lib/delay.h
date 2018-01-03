@@ -1,7 +1,7 @@
 /* Teensyduino Core Library
  * http://www.pjrc.com/teensy/
  * Copyright (c) 2013 PJRC.COM, LLC.
- * Modifications by Jacob Alexander 2013-2015
+ * Modifications by Jacob Alexander 2013-2017
  *
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
@@ -40,47 +40,35 @@
 // ----- Macros -----
 
 // Convenience Macros, for delay compatibility with AVR-GCC
-#define _delay_ms(val) delay( val )
-#define _delay_us(val) delayMicroseconds( val )
+#define _delay_ms(val) delay_ms( val )
+#define _delay_us(val) delay_us( val )
+
+
+
+// ----- Variables -----
+
+// The systick interrupt is supposed to increment this at 1 kHz rate
+extern volatile uint32_t systick_millis_count;
 
 
 
 // ----- Functions -----
 
-// the systick interrupt is supposed to increment this at 1 kHz rate
-extern volatile uint32_t systick_millis_count;
+// - Delay Functions -
 
-static inline uint32_t millis(void) __attribute__((always_inline, unused));
-static inline uint32_t millis(void)
-{
-	return systick_millis_count; // single aligned 32 bit is atomic;
-}
+void delay_cycles( uint32_t cycles );
+void delay_us( uint32_t us );
+void delay_ms( uint32_t ms );
 
 
-static inline void delayMicroseconds(uint32_t) __attribute__((always_inline, unused));
-static inline void delayMicroseconds(uint32_t usec)
-{
-#if F_CPU == 96000000
-	uint32_t n = usec << 5;
-#elif F_CPU == 72000000
-	uint32_t n = usec << 5; // XXX Not accurate, assembly snippet needs to be updated
-#elif F_CPU == 48000000
-	uint32_t n = usec << 4;
-#elif F_CPU == 24000000
-	uint32_t n = usec << 3;
-#endif
-	asm volatile(
-		"L_%=_delayMicroseconds:"               "\n\t"
-		"subs   %0, #1"                         "\n\t"
-		"bne    L_%=_delayMicroseconds"         "\n"
-		: "+r" (n) :
-	);
-}
+// - Current Count Functions -
+
+uint32_t cycle_now();
+uint32_t us_now();
+uint32_t ms_now();
 
 
-void yield(void) __attribute__ ((weak));
+// - Misc Functions -
 
-uint32_t micros(void);
-
-void delay(uint32_t ms);
+void yield() __attribute__ ((weak));
 

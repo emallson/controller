@@ -1,4 +1,4 @@
-/* Copyright (C) 2013-2015 by Jacob Alexander
+/* Copyright (C) 2013-2017 by Jacob Alexander
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,9 +28,10 @@
 // ----- Defines -----
 
 // You can change these to give your code its own name.
-#define STR_MANUFACTURER        u"Kiibohd"
-#define STR_PRODUCT             u"Kiibohd DFU Bootloader"
-#define STR_SERIAL              u"@CHIP@"
+#define STR_MANUFACTURER        u"@MANUFACTURER@"
+#define STR_PRODUCT             u"@BOOT_PRODUCT_STR@"
+#define STR_SERIAL              u"00000000000000000000000000000000 - @CHIP@"
+#define STR_CONFIG_NAME         u"@FLASHING_STATION_ID@"
 #define STR_ALTNAME             u"@BOOT_DFU_ALTNAME@"
 
 
@@ -38,6 +39,7 @@
 // Windows, even though the driver is supplied by Microsoft, an
 // INF file is needed to load the driver.  These numbers need to
 // match the INF file.
-#define VENDOR_ID         @BOOT_VENDOR_ID@
-#define PRODUCT_ID        @BOOT_PRODUCT_ID@
+#define VENDOR_ID               @BOOT_VENDOR_ID@
+#define PRODUCT_ID              @BOOT_PRODUCT_ID@
+#define BCD_VERSION             @Git_Commit_Number@
 
